@@ -1,54 +1,75 @@
-const cheerio = require('cheerio');
-var rp = require('request-promise');
+bodyParser = require('body-parser');
+express = require('express');
+const message = require("./message");
+const hltvparse = require("./hltv-parse");
+const { port, verify_token } = require('./config');
 
 const BASE_HLTV_URL = "https://www.hltv.org/team/";
 const VITALITY = "9565/vitality#tab-matchesBox";
 const G2 = "5995/g2#tab-matchesBox"
 const VITALITY_NAME = "Vitality"
 const G2_NAME = "G2";
+const DEST_ID = 3557668797646399
 
-function getNexMatch(url, team) {
-    rp(url)
-    .then(function(html) {
-        var $ = cheerio.load(html);
-        var upcoming =  $('.match-table').first();
-        var eventTitle = upcoming.find(".text-ellipsis");
-        var date = upcoming.find(".date-cell").find("span");
-        var team1 = upcoming.find(".team-1");
-        var team2 = upcoming.find(".team-2");
+app = express().use(bodyParser.json());
 
-        return "Prochain match de " + team + " : Le " + date + " - " + team1 + " Vs " + team2 + " - " + eventTitle
-    })
-    .catch(function(err) {
-        console.log(err);
-    })
-}
+app.get('/webhook', (req, res) => {
+    console.log("plz");
 
-function getLastResult(url, team) {
-   
-    rp(url)
-    .then(function(html) {
-        var $ = cheerio.load(html);
-        var html = $("html");
-        var lastResult = $('.match-table').eq(1);
-        var thead = lastResult.children('thead').eq(1);
-        var eventTitle = thead.find(".text-ellipsis");
-        var tbody = lastResult.children("tbody").eq(0);
-        var tr = tbody.children("tr").eq(0);
-        var date = tr.find(".date-cell").find("span");
-        var team1 = tr.find(".team-1");
-        var team2 = tr.find(".team-2");
-        console.log(eventTitle.text());
-        console.log(team1.text());
-        console.log(team2.text());
-        console.log(date.text());
-        console.log("Dernier résultat de " + team + " : Le " + date.text() + " - " + team1.text() + " Vs " + team2.text() + " - " + eventTitle.text());
-        return "Dernier résultat de " + team + " : Le " + date.text() + " - " + team1.text() + " Vs " + team2.text() + " - " + eventTitle.text()
-    })
-    .catch(function(err) {
-        console.log(err);
-    })
-}
+    // Your verify token. Should be a random string.
+    let VERIFY_TOKEN = verify_token
+
+    // Parse the query params
+    let mode = req.query['hub.mode'];
+    let token = req.query['hub.verify_token'];
+    let challenge = req.query['hub.challenge'];
+
+    // Checks if a token and mode is in the query string of the request
+    //if (mode && token) {
+
+    // Checks the mode and token sent is correct
+    if ((mode === 'subscribe') && (token === VERIFY_TOKEN)) {
+
+        // Responds with the challenge token from the request
+        console.log('WEBHOOK_VERIFIED');
+        res.status(200).send(challenge);
+
+    } else {
+        // Responds with '403 Forbidden' if verify tokens do not match
+        res.sendStatus(403);
+    }
+    // }
+});
+
+app.post('/webhook', (req, res) => {
+    let body = req.body;
+
+    // Checks this is an event from a page subscription
+    if (body.object === 'page') {
+
+        // Iterates over each entry - there may be multiple if batched
+        body.entry.forEach(function (entry) {
+
+            // Gets the message. entry.messaging is an array, but 
+            // will only ever contain one message, so we get index 0
+            let webhook_event = entry.messaging[0];
+            console.log(webhook_event);
+        });
+
+        // Returns a '200 OK' response to all requests
+        res.status(200).send('EVENT_RECEIVED');
+    } else {
+        // Returns a '404 Not Found' if event is not from a page subscription
+        res.sendStatus(404);
+    }
+
+});
+
 
 //getNexMatch(BASE_HLTV_URL + VITALITY);
-console.log(getLastResult(BASE_HLTV_URL + VITALITY, VITALITY_NAME));
+
+hltvparse.getNexMatch(BASE_HLTV_URL + VITALITY, VITALITY_NAME).then(function(msg) {
+    console.log(msg);
+})
+app.listen(port, () => console.log('webhook is listening'));
+
